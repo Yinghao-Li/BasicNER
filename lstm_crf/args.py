@@ -88,7 +88,7 @@ class Arguments:
     @cached_property
     @torch_required
     def _setup_devices(self) -> "torch.device":
-        if self.no_cuda:
+        if self.no_cuda or not torch.cuda.is_available():
             device = torch.device("cpu")
             self._n_gpu = 0
         else:
