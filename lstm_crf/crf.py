@@ -67,7 +67,7 @@ class CRF(nn.Module):
         length = features.size(1)
         masks_ = masks[:, :length].float()
 
-        forward_score = self.__forward_algorithm(features, masks_)
+        forward_score = self._forward_algorithm(features, masks_)
         gold_score = self._score_sentence(features, ys[:, :length].long(), masks_)
         loss = (forward_score - gold_score).mean()
         return loss
@@ -148,7 +148,7 @@ class CRF(nn.Module):
 
         return best_score, best_paths
 
-    def __forward_algorithm(self, features, masks):
+    def _forward_algorithm(self, features, masks):
         """calculate the partition function with forward algorithm.
         TRICK: log_sum_exp([x1, x2, x3, x4, ...]) = log_sum_exp([log_sum_exp([x1, x2]), log_sum_exp([x3, x4]), ...])
         :param features: features. [s_batch, l_seq, n_tags]

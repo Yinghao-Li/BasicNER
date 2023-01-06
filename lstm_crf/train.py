@@ -1,21 +1,17 @@
 import gc
 import logging
-import os
 from typing import Optional
 
-import numpy as np
 import torch
-import torch.nn as nn
 import wandb
+import numpy as np
 from seqlbtoolkit.base_model.eval import Metric
 from seqlbtoolkit.base_model.train import BaseTrainer
 from tqdm.auto import tqdm
-from transformers import get_scheduler
 
 from .status import Status
 from .args import Config
-from .collator import collator
-from .dataset import Dataset
+from .dataset import Dataset, collator
 from .model import BiRnnCrf
 
 logger = logging.getLogger(__name__)
@@ -48,7 +44,6 @@ class Trainer(BaseTrainer):
         self._loss_fn = None
         self._status = Status()
         self.initialize()
-        self.initialize_loss_function()
 
     @property
     def training_dataset(self):
@@ -80,45 +75,6 @@ class Trainer(BaseTrainer):
             )
         return self
 
-    def initialize_scheduler(self, scheduler=None):
-        """
-        Initialize learning rate scheduler
-        """
-        num_update_steps_per_epoch = int(np.ceil(
-            len(self._training_dataset) / self._config.batch_size
-        ))
-        num_warmup_steps = int(np.ceil(
-            num_update_steps_per_epoch * self._config.warmup_ratio * self._config.num_train_epochs
-        ))
-        num_training_steps = int(np.ceil(num_update_steps_per_epoch * self._config.num_train_epochs))
-
-        self._scheduler = get_scheduler(
-            self._config.lr_scheduler_type,
-            self._optimizer,
-            num_warmup_steps=num_warmup_steps,
-            num_training_steps=num_training_steps,
-        )
-        return self
-
-    def initialize_loss_function(self, loss_fn=None):
-        """
-        Initialize loss function. Notice that the reduction should always be 'mean'.
-        """
-        if loss_fn is not None:
-            self._loss_fn = loss_fn
-        else:
-            self._loss_fn = nn.BCEWithLogitsLoss(
-                reduction='mean',
-                pos_weight=torch.tensor([self.config.pos_weight])
-            )
-
-        try:
-            self._loss_fn.to(self._device)
-        except AttributeError:
-            pass
-
-        return self
-
     def run(self):
         self._model.to(self._device)
 
@@ -142,9 +98,6 @@ class Trainer(BaseTrainer):
 
         logger.info("Test results:")
         self.log_results(test_results)
-
-        if self.config.save_preds:
-            self.write_preds(self.test_dataset)
 
         wandb.finish()
 
@@ -253,10 +206,11 @@ class Trainer(BaseTrainer):
         true_lbs = np.concatenate(true_lbs)
         pred_lbs = np.concatenate(pred_lbs)
 
-        precision, recall, f1 = binary_precision_recall_f1(true_lbs, pred_lbs)
-        metric = Metric(precision, recall, f1)
-
-        return metric
+        # precision, recall, f1 = binary_precision_recall_f1(true_lbs, pred_lbs)
+        # metric = Metric(precision, recall, f1)
+        #
+        # return metric
+        return Metric()
 
     def predict(self, dataset: Dataset):
         data_loader = self.get_dataloader(dataset)
@@ -299,10 +253,11 @@ class Trainer(BaseTrainer):
 
         true_lbs = torch.cat(self.test_dataset.lbs).cpu().numpy()
 
-        precision, recall, f1 = binary_precision_recall_f1(true_lbs, pred_lbs)
-        metric = Metric(precision, recall, f1)
-
-        return metric
+        # precision, recall, f1 = binary_precision_recall_f1(true_lbs, pred_lbs)
+        # metric = Metric(precision, recall, f1)
+        #
+        # return metric
+        return Metric()
 
     @staticmethod
     def log_results(metrics):

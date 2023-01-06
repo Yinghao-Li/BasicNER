@@ -6,6 +6,7 @@ import logging
 import numpy as np
 from typing import List, Optional
 from string import printable
+from dataclasses import dataclass
 
 import torch
 from torch.utils.data import DataLoader
@@ -18,19 +19,49 @@ from .args import Config
 logger = logging.getLogger(__name__)
 
 
-# noinspection PyBroadException
+@dataclass
+class DataInstance:
+    text: List[str] = None
+    embs: torch.Tensor = None
+    lbs: List[str] = None
+
+    def __setitem__(self, k, v):
+        self.__dict__.update(zip(k, v) if type(k) is tuple else [(k, v)])
+
+
+def feature_lists_to_instance_list(instance_class, **kwargs):
+    data_points = list()
+    keys = tuple(kwargs.keys())
+
+    for feature_point_list in zip(*tuple(kwargs.values())):
+        inst = instance_class()
+        inst[keys] = feature_point_list
+        data_points.append(inst)
+
+    return data_points
+
+
+def instance_list_to_feature_lists(instance_list: list, feature_names: Optional[List[str]] = None):
+    if not feature_names:
+        feature_names = list(instance_list[0].keys())
+
+    features_lists = list()
+    for name in feature_names:
+        features_lists.append([getattr(inst, name) for inst in instance_list])
+
+    return features_lists
+
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(self,
                  text: Optional[List[List[str]]] = None,
                  embs: Optional[List[torch.Tensor]] = None,
-                 lbs: Optional[List[List[str]]] = None,
-                 ents: Optional[List[str]] = None
-                 ):
+                 lbs: Optional[List[List[str]]] = None):
         super().__init__()
         self._embs = embs
         self._text = text
         self._lbs = lbs
-        self._ents = ents
+        self._data_points = None
 
     @property
     def n_insts(self):
@@ -48,10 +79,6 @@ class Dataset(torch.utils.data.Dataset):
     def lbs(self):
         return self._lbs if self._lbs else list()
 
-    @property
-    def ents(self):
-        return self._ents
-
     @text.setter
     def text(self, value):
         logger.warning(f'{type(self)}: text has been changed')
@@ -67,11 +94,6 @@ class Dataset(torch.utils.data.Dataset):
         logger.warning(f'{type(self)}: embeddings have been changed')
         self._embs = value
 
-    @ents.setter
-    def ents(self, value):
-        logger.warning(f'{type(self)}: entity types have been changed')
-        self._ents = value
-
     def __len__(self):
         return self.n_insts
 
@@ -82,26 +104,18 @@ class Dataset(torch.utils.data.Dataset):
             return self._text[idx], self._embs[idx]
 
     def __add__(self, other: "Dataset") -> "Dataset":
-        assert self.ents and other.ents and self.ents == other.ents, ValueError("Entity types not matched!")
 
         return Dataset(
             text=copy.deepcopy(self.text + other.text),
             embs=copy.deepcopy(self.embs + other.embs),
             lbs=copy.deepcopy(self.lbs + other.lbs),
-            ents=copy.deepcopy(self.ents),
         )
 
     def __iadd__(self, other: "Dataset") -> "Dataset":
 
-        if self.ents:
-            assert other.ents and self.ents == other.ents, ValueError("Entity types do not match!")
-        else:
-            assert other.ents, ValueError("Attribute `ents` not found!")
-
         self.text = copy.deepcopy(self.text + other.text)
         self.embs = copy.deepcopy(self.embs + other.embs)
         self.lbs = copy.deepcopy(self.lbs + other.lbs)
-        self.ents = copy.deepcopy(other.ents)
         return self
 
     def prepare(self, config: Config, partition: str):
@@ -124,7 +138,17 @@ class Dataset(torch.utils.data.Dataset):
         logger.info(f'Loading data file: {file_path}')
 
         file_dir, file_name = os.path.split(file_path)
-        sentence_list, label_list = load_data_from_json(file_path, config.debug_mode)
+        sentence_list, label_list = load_data_from_json(file_path, config.debug)
+
+        self._text = sentence_list
+        self._lbs = label_list
+        if config.debug:
+            self._text = self._text[:100]
+            self._lbs = self._lbs[:100]
+
+        logger.info(f'Data loaded from {file_path}.')
+
+        logger.info(f'Searching for BERT embeddings...')
 
         # get embedding directory
         if os.path.isdir(config.bert_model_name_or_path):
@@ -134,11 +158,6 @@ class Dataset(torch.utils.data.Dataset):
         emb_path = os.path.join(file_dir, f"{bert_model_name}", f"{partition}.pt")
         os.makedirs(os.path.join(file_dir, f"{bert_model_name}"), exist_ok=True)
 
-        self._text = sentence_list
-        self._lbs = label_list
-        logger.info(f'Data loaded from {file_path}.')
-
-        logger.info(f'Searching for BERT embeddings...')
         if os.path.isfile(emb_path):
             logger.info(f"Found embedding file: {emb_path}. Loading to memory...")
             embs = torch.load(emb_path)
@@ -154,11 +173,16 @@ class Dataset(torch.utils.data.Dataset):
 
             self.build_embs(config.bert_model_name_or_path, config.device, emb_path)
 
-        self._ents = config.entity_types
         config.d_emb = self._embs[0].shape[-1]
-        if getattr(config, 'debug_mode', False):
+
+        if config.debug:
             self._embs = self._embs[:100]
 
+        data_points = list()
+        for text, embs, lbs in zip(self._text, self._embs, self._lbs):
+            data_points.append(DataInstance(text, embs, lbs))
+
+        self._data_points = data_points
         return self
 
     def build_embs(self,
@@ -222,11 +246,17 @@ def batch_prep(emb_list: List[torch.Tensor],
     return emb_batch, obs_batch, seq_lens, txt_list, lbs_list
 
 
-def collate_fn(insts):
+def collator(insts):
     """
     Principle used to construct dataloader
-    :param insts: original instances
-    :return: padded instances
+
+    Parameters
+    ----------
+    insts: original instances
+
+    Returns
+    --------
+    padded instances
     """
     all_insts = list(zip(*insts))
     if len(all_insts) == 4:
@@ -268,6 +298,4 @@ def load_data_from_json(file_dir: str, debug: Optional = None):
         lbs = span_to_label(span_list_to_dict(data['label']), sent_tks)
         lbs_list.append(lbs)
 
-    if debug:
-        return sentence_list[:100], lbs_list[:100]
     return sentence_list, lbs_list

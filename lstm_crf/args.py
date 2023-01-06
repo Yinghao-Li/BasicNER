@@ -19,6 +19,18 @@ class Arguments:
     Arguments regarding the training of Neural hidden Markov Model
     """
 
+    # --- wandb parameters ---
+    wandb_api_key: Optional[str] = field(
+        default=None, metadata={'help': 'The API key that indicates your wandb account.'
+                                        'Can be found here: https://wandb.ai/settings'}
+    )
+    wandb_project: Optional[str] = field(
+        default=None, metadata={'help': 'name of the wandb project.'}
+    )
+    wandb_name: Optional[str] = field(
+        default=None, metadata={'help': 'wandb model name.'}
+    )
+
     # --- manage directories and IO ---
     data_dir: Optional[str] = field(
         default='', metadata={'help': 'Directory to datasets'}
@@ -33,34 +45,6 @@ class Arguments:
     )
     save_dataset: Optional[bool] = field(
         default=False, metadata={"help": "Whether save the datasets used for training & validation & test"}
-    )
-    save_dataset_to_data_dir: Optional[bool] = field(
-        default=False, metadata={"help": "Whether save the datasets to the original dataset folder. "
-                                         "If not, the dataset would be saved to the result folder."}
-    )
-    load_preprocessed_dataset: Optional[bool] = field(
-        default=False, metadata={"help": "Whether load the pre-processed datasets from disk"}
-    )
-    load_s1_model: Optional[bool] = field(
-        default=False, metadata={'help': 'Whether load the trained stage-1 model parameters'}
-    )
-    load_s2_model: Optional[bool] = field(
-        default=False, metadata={'help': 'Whether load the trained stage-2 model parameters.'
-                                         'Usually used for testing model.'}
-    )
-    load_s3_model: Optional[bool] = field(
-        default=False, metadata={'help': 'Whether load the trained stage-3 model parameters.'
-                                         'Usually used for testing model.'}
-    )
-    training_ratio_per_epoch: Optional[float] = field(
-        default=None, metadata={'help': 'How much data in the training set is used for one epoch.'
-                                        'Leave None if use the whole training set'}
-    )
-    load_init_mat: Optional[bool] = field(
-        default=False, metadata={'help': 'Whether to load initial transition and emission matrix from disk'}
-    )
-    save_init_mat: Optional[bool] = field(
-        default=False, metadata={'help': 'Whether to save initial transition and emission matrix from disk'}
     )
     log_dir: Optional[str] = field(
         default=None,
@@ -82,12 +66,12 @@ class Arguments:
     seed: Optional[int] = field(
         default=42, metadata={"help": "Random seed that will be set at the beginning of training."}
     )
-    debug_mode: Optional[bool] = field(
+    debug: Optional[bool] = field(
         default=False, metadata={"help": "Debugging mode with fewer training data"}
     )
 
     def __post_init__(self):
-        pass
+        self.apply_wandb = self.wandb_api_key and self.wandb_project and self.wandb_name
 
     # The following three functions are copied from transformers.training_args
     @cached_property
