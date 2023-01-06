@@ -5,21 +5,25 @@ Modified from https://github.com/jidasheng/bi-lstm-crf
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from .crf import CRF
+from .args import Config
 
 
 class BiRnnCrf(nn.Module):
-    def __init__(self, vocab_size, tagset_size, embedding_dim, hidden_dim, num_rnn_layers=1, rnn="lstm"):
+    def __init__(self, config: Config, num_rnn_layers=1, rnn="lstm"):
         super(BiRnnCrf, self).__init__()
-        self.embedding_dim = embedding_dim
-        self.hidden_dim = hidden_dim
-        self.vocab_size = vocab_size
-        self.tagset_size = tagset_size
 
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        vocab_size = getattr(config, 'vocab_size', None)
+        self.embedding = nn.Embedding(vocab_size, config.d_emb) if vocab_size else None
+
         rnn = nn.LSTM if rnn == "lstm" else nn.GRU
-        self.rnn = rnn(embedding_dim, hidden_dim // 2, num_layers=num_rnn_layers,
-                       bidirectional=True, batch_first=True)
-        self.crf = CRF(hidden_dim, self.tagset_size)
+        self.rnn = rnn(
+            config.d_emb,
+            config.d_hidden // 2,
+            num_layers=num_rnn_layers,
+            bidirectional=True,
+            batch_first=True
+        )
+        self.crf = CRF(config.d_emb, self.tagset_size)
 
     def _build_features(self, sentences):
         masks = sentences.gt(0)

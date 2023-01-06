@@ -67,6 +67,11 @@ class Arguments:
         metadata={"help": "the directory of the log file. Set to '' to disable logging"}
     )
 
+    # --- model arguments ---
+    d_hidden: Optional[int] = field(
+        default=128, metadata={'help': 'Model hidden dimension.'}
+    )
+
     # --- training and data arguments ---
     nn_lr: Optional[float] = field(
         default=0.001, metadata={'help': 'learning rate of the neural networks in CHMM'}
@@ -122,6 +127,8 @@ class Arguments:
 @dataclass
 class Config(Arguments, BaseNERConfig):
 
+    d_emb = None
+
     def get_meta(self):
 
         # Load meta if exist
@@ -135,3 +142,11 @@ class Config(Arguments, BaseNERConfig):
 
         self.entity_types = meta_dict['entity_types']
         self.bio_label_types = entity_to_bio_labels(meta_dict['entity_types'])
+
+    @property
+    def n_ents(self):
+        return len(self.entity_types)
+
+    @property
+    def n_lbs(self):
+        return len(self.bio_label_types)
