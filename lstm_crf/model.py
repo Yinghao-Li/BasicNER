@@ -23,7 +23,7 @@ class BiRnnCrf(nn.Module):
             bidirectional=True,
             batch_first=True
         )
-        self.crf = CRF(config.d_emb, self.tagset_size)
+        self.crf = CRF(config.d_emb, config.n_lbs)
 
     def _build_features(self, sentences):
         masks = sentences.gt(0)

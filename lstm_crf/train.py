@@ -11,7 +11,8 @@ from tqdm.auto import tqdm
 
 from .status import Status
 from .args import Config
-from .dataset import Dataset, collator
+from .dataset import Dataset
+from .collator import collator
 from .model import BiRnnCrf
 
 logger = logging.getLogger(__name__)

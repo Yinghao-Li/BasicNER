@@ -43,9 +43,6 @@ class Arguments:
         default='', metadata={"help": "Path to pretrained BERT model or model identifier from huggingface.co/models; "
                                       "Used to construct BERT embeddings if not exist"}
     )
-    save_dataset: Optional[bool] = field(
-        default=False, metadata={"help": "Whether save the datasets used for training & validation & test"}
-    )
     log_dir: Optional[str] = field(
         default=None,
         metadata={"help": "the directory of the log file. Set to '' to disable logging"}
@@ -56,9 +53,21 @@ class Arguments:
         default=128, metadata={'help': 'Model hidden dimension.'}
     )
 
-    # --- training and data arguments ---
-    nn_lr: Optional[float] = field(
+    # --- training arguments ---
+    batch_size: Optional[int] = field(
+        default=16, metadata={'help': 'model training batch size'}
+    )
+    num_train_epochs: Optional[int] = field(
+        default=100, metadata={'help': 'number of denoising model training epochs'}
+    )
+    learning_rate: Optional[float] = field(
         default=0.001, metadata={'help': 'learning rate of the neural networks in CHMM'}
+    )
+    weight_decay: Optional[float] = field(
+        default=0.01, metadata={'help': 'strength of weight decay'}
+    )
+    model_buffer_size: Optional[int] = field(
+        default=1, metadata={'help': 'How many model checkpoints to buffer for the final evaluation'}
     )
     no_cuda: Optional[bool] = field(
         default=False, metadata={"help": "Disable CUDA even when it is available"}
@@ -126,6 +135,8 @@ class Config(Arguments, BaseNERConfig):
 
         self.entity_types = meta_dict['entity_types']
         self.bio_label_types = entity_to_bio_labels(meta_dict['entity_types'])
+
+        return self
 
     @property
     def n_ents(self):

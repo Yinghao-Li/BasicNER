@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def treeformer_main(args):
 
-    config = Config().from_args(args)
+    config = Config().from_args(args).get_meta()
 
     wandb.init(
         project=args.wandb_project,
