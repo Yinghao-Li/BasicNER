@@ -5,8 +5,8 @@ from typing import Optional
 import torch
 import wandb
 import numpy as np
-from seqlbtoolkit.base_model.eval import Metric
 from seqlbtoolkit.base_model.train import BaseTrainer
+from seqlbtoolkit.base_model.eval import get_ner_metrics
 from tqdm.auto import tqdm
 
 from .status import Status
@@ -41,7 +41,6 @@ class Trainer(BaseTrainer):
 
         self._model = model
         self._optimizer = None
-        self._scheduler = None
         self._loss_fn = None
         self._status = Status()
         self.initialize()
@@ -116,29 +115,17 @@ class Trainer(BaseTrainer):
         self._model.train()
         self._optimizer.zero_grad()
 
-        n_nodes = 0
         for idx, inputs in enumerate(tqdm(data_loader)):
             # get data
             inputs.to(self._device)
 
             # training step
-            logits = self._model(inputs)
-            loss = self.compute_loss(logits, inputs.lbs, inputs.padding_mask)
+            loss = self._model.loss(inputs)
             loss.backward()
             # track loss
-            n_batch_node = torch.sum(~inputs.padding_mask).cpu()
-            train_loss += loss.detach().cpu() * n_batch_node
+            train_loss += loss.detach().cpu()
             self._optimizer.step()
-            self._scheduler.step()
             self._optimizer.zero_grad()
-
-            n_nodes += n_batch_node
-
-            if self.config.eval_interval and (idx + 1) % self.config.eval_interval == 0:
-                self.eval_and_save()
-                self._model.train()
-
-        train_loss /= n_nodes
 
         return train_loss
 
@@ -167,51 +154,26 @@ class Trainer(BaseTrainer):
         self._status.eval_step += 1
         return None
 
-    def compute_loss(self,
-                     logits: torch.Tensor,
-                     lbs: torch.Tensor,
-                     mask: torch.Tensor):
-        """
-        Compute training loss
-        """
-        mask = (~mask).view(-1)
-
-        logits = logits.view(-1)[mask]
-        lbs = lbs.view(-1)[mask]
-
-        loss = self._loss_fn(input=logits, target=lbs)
-        return loss
-
     def evaluate(self, dataset: Dataset):
         data_loader = self.get_dataloader(dataset)
         self._model.to(self._device)
         self._model.eval()
 
         pred_lbs = list()
-        true_lbs = list()
         with torch.no_grad():
             for inputs in data_loader:
                 inputs.to(self._device)
-                lbs = inputs.lbs
 
-                logits = self._model(inputs)
+                _, pred_ids = self._model(inputs)
 
-                mask = ~inputs.padding_mask.view(-1)
-                pred_prob_batch = torch.sigmoid(logits.view(-1)[mask]).detach().cpu().numpy()
-                pred_lb_batch = (pred_prob_batch > 0.5).astype(int)
-                pred_lbs.append(pred_lb_batch)
+                pred_lb_batch = [[self.config.bio_label_types[lb_index] for lb_index in label_indices]
+                                 for label_indices in pred_ids]
+                pred_lbs += pred_lb_batch
 
-                true_lb_batch = lbs.view(-1)[mask].cpu().numpy().astype(int)
-                true_lbs.append(true_lb_batch)
-
-        true_lbs = np.concatenate(true_lbs)
-        pred_lbs = np.concatenate(pred_lbs)
-
-        # precision, recall, f1 = binary_precision_recall_f1(true_lbs, pred_lbs)
-        # metric = Metric(precision, recall, f1)
-        #
-        # return metric
-        return Metric()
+        true_lbs = [[self.config.bio_label_types[lb_index] for lb_index in label_indices]
+                    for label_indices in dataset.lbs]
+        metric = get_ner_metrics(true_lbs, pred_lbs)
+        return metric
 
     def predict(self, dataset: Dataset):
         data_loader = self.get_dataloader(dataset)
@@ -243,22 +205,7 @@ class Trainer(BaseTrainer):
             self._model.load_state_dict(self._status.model_buffer.model_state_dicts[0])
             return super().test()
 
-        pred_lbs_list = list()
-        for model_state_dicts in self._status.model_buffer.model_state_dicts:
-            self._model.load_state_dict(model_state_dicts)
-            pred_lbs = self.predict(self.test_dataset)[0]
-            pred_lbs_list.append(pred_lbs)
-
-        pred_lbs = np.stack(pred_lbs_list, axis=0).mean(axis=0)
-        pred_lbs = (pred_lbs > 0.5).astype(int)
-
-        true_lbs = torch.cat(self.test_dataset.lbs).cpu().numpy()
-
-        # precision, recall, f1 = binary_precision_recall_f1(true_lbs, pred_lbs)
-        # metric = Metric(precision, recall, f1)
-        #
-        # return metric
-        return Metric()
+        raise NotImplementedError("Function for multi-checkpoint caching & evaluation is not implemented!")
 
     @staticmethod
     def log_results(metrics):

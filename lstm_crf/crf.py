@@ -21,25 +21,25 @@ class CRF(nn.Module):
     The CRF module contain a inner Linear Layer which transform the input from features space to tag space.
     """
 
-    def __init__(self, in_features, num_tags):
+    def __init__(self, d_feature, n_lbs):
         """
         Initialization
 
         Parameters
         ----------
-        in_features: number of features for the input
-        num_tags: number of tags. DO NOT include START, STOP tags, they are included internal.
+        d_feature: number of features for the input
+        n_lbs: number of tags. DO NOT include START, STOP tags, they are included internal.
         """
         super().__init__()
 
-        self.num_tags = num_tags + 2
-        self.start_idx = self.num_tags - 2
-        self.stop_idx = self.num_tags - 1
+        self.n_lbs = n_lbs + 2
+        self.start_idx = self.n_lbs - 2
+        self.stop_idx = self.n_lbs - 1
 
-        self.fc = nn.Linear(in_features, self.num_tags)
+        self.fc = nn.Linear(d_feature, self.n_lbs)
 
         # transition factor, Tij mean transition from j to i
-        self.transitions = nn.Parameter(torch.randn(self.num_tags, self.num_tags), requires_grad=True)
+        self.transitions = nn.Parameter(torch.randn(self.n_lbs, self.n_lbs), requires_grad=True)
         self.transitions.data[self.start_idx, :] = IMPOSSIBLE
         self.transitions.data[:, self.stop_idx] = IMPOSSIBLE
 
@@ -54,11 +54,11 @@ class CRF(nn.Module):
         features = self.fc(features)
         return self._viterbi_decode(features, masks[:, :features.size(1)].float())
 
-    def loss(self, features, ys, masks):
+    def loss(self, features, lbs, masks):
         """negative log likelihood loss
         B: batch size, length: sequence length, D: dimension
         :param features: [B, length, D]
-        :param ys: tags, [B, length]
+        :param lbs: tags, [B, length]
         :param masks: masks for padding, [B, length]
         :return: loss
         """
@@ -68,17 +68,17 @@ class CRF(nn.Module):
         masks_ = masks[:, :length].float()
 
         forward_score = self._forward_algorithm(features, masks_)
-        gold_score = self._score_sentence(features, ys[:, :length].long(), masks_)
+        gold_score = self._score_sentence(features, lbs[:, :length].long(), masks_)
         loss = (forward_score - gold_score).mean()
         return loss
 
-    def _score_sentence(self, features, tags, masks):
+    def _score_sentence(self, features, lbs, masks):
         """Gives the score of a provided tag sequence
 
         Parameters
         ----------
         features: [s_batch, l_seq, n_tags]
-        tags: [s_batch, l_seq]
+        lbs: [s_batch, l_seq]
         masks: [s_batch, l_seq]
 
         Returns
@@ -88,15 +88,15 @@ class CRF(nn.Module):
         s_batch, l_seq, n_tags = features.shape
 
         # emission score
-        emit_scores = features.gather(dim=2, index=tags.unsqueeze(-1)).squeeze(-1)
+        emit_scores = features.gather(dim=2, index=lbs.unsqueeze(-1)).squeeze(-1)
 
         # transition score
-        start_tag = torch.full((s_batch, 1), self.start_idx, dtype=torch.long, device=tags.device)
-        tags = torch.cat([start_tag, tags], dim=1)  # [s_batch, l_seq+1]
-        trans_scores = self.transitions[tags[:, 1:], tags[:, :-1]]
+        start_tag = torch.full((s_batch, 1), self.start_idx, dtype=torch.long, device=lbs.device)
+        lbs = torch.cat([start_tag, lbs], dim=1)  # [s_batch, l_seq+1]
+        trans_scores = self.transitions[lbs[:, 1:], lbs[:, :-1]]
 
         # last transition score to STOP tag
-        last_tag = tags.gather(dim=1, index=masks.sum(1).long().unsqueeze(1)).squeeze(1)  # [s_batch]
+        last_tag = lbs.gather(dim=1, index=masks.sum(1).long().unsqueeze(1)).squeeze(1)  # [s_batch]
         last_score = self.transitions[self.stop_idx, last_tag]
 
         score = ((trans_scores + emit_scores) * masks).sum(1) + last_score

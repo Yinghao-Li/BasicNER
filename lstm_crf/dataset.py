@@ -12,6 +12,10 @@ import torch
 from torch.utils.data import DataLoader
 from seqlbtoolkit.embs import build_bert_token_embeddings
 from seqlbtoolkit.data import span_to_label, span_list_to_dict
+from seqlbtoolkit.base_model.dataset import (
+    DataInstance,
+    feature_lists_to_instance_list,
+)
 
 from .args import Config
 
@@ -20,36 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class DataInstance:
+class NERDataInstance(DataInstance):
     text: List[str] = None
     embs: torch.Tensor = None
-    lbs: List[str] = None
-
-    def __setitem__(self, k, v):
-        self.__dict__.update(zip(k, v) if type(k) is tuple else [(k, v)])
-
-
-def feature_lists_to_instance_list(instance_class, **kwargs):
-    data_points = list()
-    keys = tuple(kwargs.keys())
-
-    for feature_point_list in zip(*tuple(kwargs.values())):
-        inst = instance_class()
-        inst[keys] = feature_point_list
-        data_points.append(inst)
-
-    return data_points
-
-
-def instance_list_to_feature_lists(instance_list: list, feature_names: Optional[List[str]] = None):
-    if not feature_names:
-        feature_names = list(instance_list[0].__dict__.keys())
-
-    features_lists = list()
-    for name in feature_names:
-        features_lists.append([getattr(inst, name) for inst in instance_list])
-
-    return features_lists
+    lbs: torch.Tensor = None
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -81,17 +59,14 @@ class Dataset(torch.utils.data.Dataset):
 
     @text.setter
     def text(self, value):
-        logger.warning(f'{type(self)}: text has been changed')
         self._text = value
 
     @lbs.setter
     def lbs(self, value):
-        logger.warning(f'{type(self)}: labels have been changed')
         self._lbs = value
 
     @embs.setter
     def embs(self, value):
-        logger.warning(f'{type(self)}: embeddings have been changed')
         self._embs = value
 
     def __len__(self):
@@ -174,6 +149,10 @@ class Dataset(torch.utils.data.Dataset):
 
         if config.debug:
             self._embs = self._embs[:100]
+
+        # convert labels to indices
+        lb2id_mapping = {lb: idx for idx, lb in enumerate(config.bio_label_types)}
+        self._lbs = [torch.tensor([lb2id_mapping[lb] for lb in lbs], dtype=torch.long) for lbs in self._lbs]
 
         self._data_points = feature_lists_to_instance_list(
             DataInstance,

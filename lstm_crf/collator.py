@@ -2,8 +2,11 @@
 # Licensed under the MIT License.
 
 import torch
-from .dataset import DataInstance, instance_list_to_feature_lists
+
 from typing import List
+from seqlbtoolkit.base_model.dataset import instance_list_to_feature_lists
+
+from .dataset import NERDataInstance
 
 
 class Batch:
@@ -26,7 +29,7 @@ class Batch:
                 return v.size(0)
 
 
-def collator(instance_list: List[DataInstance]):
+def collator(instance_list: List[NERDataInstance]):
 
     embs, lbs = instance_list_to_feature_lists(instance_list, ['embs', 'lbs'])
 
@@ -38,13 +41,14 @@ def collator(instance_list: List[DataInstance]):
         torch.cat((tk_embs, torch.zeros(max_length - len(tk_embs), feature_dim)), dim=0) for tk_embs in embs
     ])
     lbs_batch = torch.stack([
-        torch.cat((lb, torch.full((max_length - len(lb), ), -1)), dim=0) for lb in lbs
+        # torch.tensor(lb + [-1] * (max_length - len(lb)), dtype=torch.long) for lb in lbs
+        torch.cat((lb, torch.full((max_length - len(lb), ), 0)), dim=0) for lb in lbs
     ])
 
-    padding_mask_batch = lbs_batch == -1
+    padding_mask_batch = torch.arange(max_length)[None, :] < torch.tensor(seq_lengths)[:, None]
 
     return Batch(
-        txt_emb=txt_emb_batch,
+        embs=txt_emb_batch,
         lbs=lbs_batch,
         padding_mask=padding_mask_batch,
     )

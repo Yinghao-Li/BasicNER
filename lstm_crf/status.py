@@ -47,12 +47,22 @@ class ModelBuffer:
             return self._model_state_dicts
 
     @property
+    def best_state_dict(self):
+        self.sort()
+        return self._model_state_dicts[-1]
+
+    @property
     def metrics(self) -> list:
         self.sort()
         try:
             return self._metrics.tolist()
         except AttributeError:
             return self._metrics
+
+    @property
+    def best_metrics(self):
+        self.sort()
+        return self._metrics[-1]
 
     def sort(self):
         sorted_ids = np.argsort(self._metrics)
