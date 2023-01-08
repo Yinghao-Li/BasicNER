@@ -20,7 +20,7 @@ from lstm_crf.train import Trainer
 logger = logging.getLogger(__name__)
 
 
-def treeformer_main(args):
+def main(args):
 
     config = Config().from_args(args).get_meta()
 
@@ -97,7 +97,7 @@ if __name__ == '__main__':
     set_seed(arguments.seed)
 
     try:
-        treeformer_main(args=arguments)
+        main(args=arguments)
     except Exception as e:
         logger.exception(e)
         raise e
