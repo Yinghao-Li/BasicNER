@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from transformers import AutoTokenizer
 
 import torch
-from torch.utils.data import DataLoader
 from seqlbtoolkit.embs import build_bert_token_embeddings
 from seqlbtoolkit.data import span_to_label, span_list_to_dict
 from seqlbtoolkit.text import split_overlength_bert_input_sequence
@@ -229,16 +228,15 @@ class Dataset(torch.utils.data.Dataset):
         self (MultiSrcNERDataset)
         """
         assert bert_model is not None, AssertionError('Please specify BERT model to build embeddings')
-        if (not self._sent_lens) or self._is_separated:
-            text = self._text
-        else:
-            sent_ends = [list(itertools.accumulate(sent_lens, operator.add)) for sent_lens in self._sent_lens]
-            sent_starts = [[0] + ends[:-1] for ends in sent_ends]
-            text = [[text_inst[s:e] for s, e in zip(starts, ends)]
-                    for starts, ends, text_inst in zip(sent_starts, sent_ends, self._text)]
 
         logger.info(f'Building BERT embeddings with {bert_model} on {device}')
-        self._embs = build_bert_token_embeddings(text, bert_model, bert_model, device=device)
+        self._embs = build_bert_token_embeddings(
+            self._text,
+            bert_model,
+            bert_model,
+            device=device,
+            sent_lengths_list=self._sent_lens if not self._is_separated else None
+        )
         return self
 
     def save(self, file_path: str):
