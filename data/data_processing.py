@@ -11,9 +11,10 @@ from transformers import (
     HfArgumentParser,
     set_seed,
 )
+from chemdataextractor.doc import Paragraph
 
 from seqlbtoolkit.io import set_logging, logging_args, save_json
-from seqlbtoolkit.data import merge_list_of_lists
+from seqlbtoolkit.data import respan, span_dict_to_list, merge_list_of_lists
 
 
 logger = logging.getLogger(__name__)
@@ -46,12 +47,19 @@ def process(args: Arguments):
             instances = json.load(f)
 
         text_list = [inst['text'] for inst in instances]
-        ent_list = [[[d['start_offset'], d['end_offset'], d['label']] for d in instance['entities']]
+        ent_list = [{(d['start_offset'], d['end_offset']): d['label'] for d in instance['entities']}
                     for instance in instances]
-        ents += merge_list_of_lists([[d['label'] for d in instance['entities']] for instance in instances])
 
-        output_dict = {f"{idx}": {"label": ent, "data": {"text": text}}
-                       for idx, (ent, text) in enumerate(zip(ent_list, text_list))}
+        output_dict = dict()
+        for idx, (text, ent_spans) in enumerate(zip(text_list, ent_list)):
+            raw_tks = Paragraph(' '.join(text)).raw_tokens
+            cde_tks = merge_list_of_lists(raw_tks)
+            cde_ent_spans = span_dict_to_list(respan(text, cde_tks, ent_spans))
+            sent_lengths = [len(tk_seq) for tk_seq in raw_tks]
+
+            output_dict[f"{idx}"] = {"label": cde_ent_spans, "data": {"text": cde_tks, 'sent_lengths': sent_lengths}}
+
+        ents += merge_list_of_lists([[d['label'] for d in instance['entities']] for instance in instances])
 
         save_json(output_dict, os.path.join(args.output_dir, f"{partition}.json"), collapse_level=4)
 
