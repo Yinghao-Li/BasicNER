@@ -3,6 +3,8 @@ import json
 import copy
 import regex
 import logging
+import itertools
+import operator
 import numpy as np
 from typing import List, Optional
 from string import printable
@@ -39,6 +41,7 @@ class Dataset(torch.utils.data.Dataset):
         self._embs = embs
         self._text = text
         self._lbs = lbs
+        self._sent_lens = None
         self._data_points = None
 
     @property
@@ -110,18 +113,20 @@ class Dataset(torch.utils.data.Dataset):
         logger.info(f'Loading data file: {file_path}')
 
         file_dir, file_name = os.path.split(file_path)
-        sentence_list, label_list = load_data_from_json(file_path)
+        sentence_list, label_list, sent_lens = load_data_from_json(file_path)
 
         self._text = sentence_list
         self._lbs = label_list
+        self._sent_lens = sent_lens
+
         if config.debug:
             self._text = self._text[:100]
             self._lbs = self._lbs[:100]
+            self._sent_lens = self._sent_lens[:100]
 
         logger.info(f'Data loaded from {file_path}.')
 
         logger.info(f'Searching for BERT embeddings...')
-
         # get embedding directory
         if os.path.isdir(config.bert_model_name_or_path):
             bert_model_name = os.path.normpath(config.bert_model_name_or_path).split(os.sep)[-1]
@@ -178,9 +183,16 @@ class Dataset(torch.utils.data.Dataset):
         self (MultiSrcNERDataset)
         """
         assert bert_model is not None, AssertionError('Please specify BERT model to build embeddings')
+        if not self._sent_lens:
+            text = self._text
+        else:
+            sent_ends = [list(itertools.accumulate(sent_lens, operator.add)) for sent_lens in self._sent_lens]
+            sent_starts = [[0] + ends[:-1] for ends in sent_ends]
+            text = [[text_inst[s:e] for s, e in zip(starts, ends)]
+                    for starts, ends, text_inst in zip(sent_starts, sent_ends, self._text)]
 
         logger.info(f'Building BERT embeddings with {bert_model} on {device}')
-        self._embs = build_bert_token_embeddings(self._text, bert_model, bert_model, device=device)
+        self._embs = build_bert_token_embeddings(text, bert_model, bert_model, device=device)
         if save_dir:
             save_dir = os.path.normpath(save_dir)
             logger.info(f'Saving embeddings to {save_dir}...')
@@ -202,7 +214,8 @@ def load_data_from_json(file_dir: str):
     with open(file_dir, 'r', encoding='utf-8') as f:
         data_dict = json.load(f)
 
-    sentence_list = list()
+    tk_seqs = list()
+    sent_lens = list()
     lbs_list = list()
 
     for i in range(len(data_dict)):
@@ -210,9 +223,13 @@ def load_data_from_json(file_dir: str):
         # get tokens
         tks = [regex.sub("[^{}]+".format(printable), "", tk) for tk in data['data']['text']]
         sent_tks = ['[UNK]' if not tk else tk for tk in tks]
-        sentence_list.append(sent_tks)
+        tk_seqs.append(sent_tks)
+
+        # get sentence lengths
+        if 'sent_lengths' in data['data'].keys():
+            sent_lens.append(data['data']['sent_lengths'])
         # get true labels
         lbs = span_to_label(span_list_to_dict(data['label']), sent_tks)
         lbs_list.append(lbs)
 
-    return sentence_list, lbs_list
+    return tk_seqs, lbs_list, sent_lens
