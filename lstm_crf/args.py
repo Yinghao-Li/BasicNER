@@ -48,6 +48,17 @@ class Arguments:
         metadata={"help": "the directory of the log file. Set to '' to disable logging"}
     )
 
+    # --- data arguments ---
+    separate_overlength_sequences: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether split the overlength sequences into several smaller pieces"
+                          "according to their BERT token sequence lengths."}
+    )
+    max_seq_length: Optional[int] = field(
+        default=512,
+        metadata={"help": "The maximum length of a BERT token sequence."}
+    )
+
     # --- model arguments ---
     d_hidden: Optional[int] = field(
         default=128, metadata={'help': 'Model hidden dimension.'}

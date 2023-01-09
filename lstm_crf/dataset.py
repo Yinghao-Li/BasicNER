@@ -9,11 +9,13 @@ import numpy as np
 from typing import List, Optional
 from string import printable
 from dataclasses import dataclass
+from transformers import AutoTokenizer
 
 import torch
 from torch.utils.data import DataLoader
 from seqlbtoolkit.embs import build_bert_token_embeddings
 from seqlbtoolkit.data import span_to_label, span_list_to_dict
+from seqlbtoolkit.text import split_overlength_bert_input_sequence
 from seqlbtoolkit.base_model.dataset import (
     DataInstance,
     feature_lists_to_instance_list,
@@ -43,6 +45,8 @@ class Dataset(torch.utils.data.Dataset):
         self._lbs = lbs
         self._sent_lens = None
         self._data_points = None
+        # Whether the text and lbs sequences are separated according to maximum BERT input lengths
+        self._is_separated = False
 
     @property
     def n_insts(self):
@@ -109,51 +113,47 @@ class Dataset(torch.utils.data.Dataset):
         assert partition in ['train', 'valid', 'test'], \
             ValueError(f"Argument `partition` should be one of 'train', 'valid' or 'test'!")
 
+        # Manage paths
+        if os.path.isdir(config.bert_model_name_or_path):
+            bert_model_name = os.path.normpath(config.bert_model_name_or_path).split(os.sep)[-1]
+        else:
+            bert_model_name = config.bert_model_name_or_path
+
         file_path = os.path.normpath(os.path.join(config.data_dir, f"{partition}.json"))
-        logger.info(f'Loading data file: {file_path}')
+        processed_data_path = os.path.join(config.data_dir, "processed", f"{bert_model_name}", f"{partition}.pt")
 
-        file_dir, file_name = os.path.split(file_path)
-        sentence_list, label_list, sent_lens = load_data_from_json(file_path)
+        if os.path.exists(processed_data_path):
 
-        self._text = sentence_list
-        self._lbs = label_list
-        self._sent_lens = sent_lens
+            logger.info(f"Loading pre-processed data from {processed_data_path}.")
+            self.load(processed_data_path)
+
+        else:
+
+            logger.info(f'Loading data file: {file_path}')
+            sentence_list, label_list, sent_lens = load_data_from_json(file_path)
+
+            self._text = sentence_list
+            self._lbs = label_list
+            self._sent_lens = sent_lens
+
+            if config.separate_overlength_sequences:
+                self.separate_sequence(config.bert_model_name_or_path, config.max_seq_length)
+
+            logger.info("Building BERT embeddings...")
+            self.build_embs(config.bert_model_name_or_path, config.device)
+
+            logger.info(f"Saving pre-processed dataset to {processed_data_path}.")
+            self.save(processed_data_path)
 
         if config.debug:
             self._text = self._text[:100]
             self._lbs = self._lbs[:100]
             self._sent_lens = self._sent_lens[:100]
+            self._embs = self._embs[:100]
 
-        logger.info(f'Data loaded from {file_path}.')
-
-        logger.info(f'Searching for BERT embeddings...')
-        # get embedding directory
-        if os.path.isdir(config.bert_model_name_or_path):
-            bert_model_name = os.path.normpath(config.bert_model_name_or_path).split(os.sep)[-1]
-        else:
-            bert_model_name = config.bert_model_name_or_path
-        emb_path = os.path.join(file_dir, f"{bert_model_name}", f"{partition}.pt")
-        os.makedirs(os.path.join(file_dir, f"{bert_model_name}"), exist_ok=True)
-
-        if os.path.isfile(emb_path):
-            logger.info(f"Found embedding file: {emb_path}. Loading to memory...")
-            embs = torch.load(emb_path)
-            if isinstance(embs[0], torch.Tensor):
-                self._embs = embs
-            elif isinstance(embs[0], np.ndarray):
-                self._embs = [torch.from_numpy(emb).to(torch.float) for emb in embs]
-            else:
-                logger.error(f"Unknown embedding type: {type(embs[0])}")
-                raise RuntimeError
-        else:
-            logger.info(f"{emb_path} does not exist. Building embeddings instead...")
-
-            self.build_embs(config.bert_model_name_or_path, config.device, emb_path)
+        logger.info(f'Data loaded.')
 
         config.d_emb = self._embs[0].shape[-1]
-
-        if config.debug:
-            self._embs = self._embs[:100]
 
         # convert labels to indices
         lb2id_mapping = {lb: idx for idx, lb in enumerate(config.bio_label_types)}
@@ -165,10 +165,57 @@ class Dataset(torch.utils.data.Dataset):
         )
         return self
 
+    def separate_sequence(self, tokenizer_or_name, max_seq_length):
+        """
+        Separate the overlength sequences and separate the labels accordingly
+
+        Parameters
+        ----------
+        tokenizer_or_name: bert tokenizer
+        max_seq_length: maximum bert sequence length
+
+        Returns
+        -------
+        self
+        """
+        if self._is_separated:
+            logger.warning("The sequences are already separated!")
+            return self
+
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_or_name) if isinstance(tokenizer_or_name, str) \
+            else tokenizer_or_name
+
+        assert self._sent_lens, AttributeError("To separate sequences, attribute `_sent_lens` cannot be empty!")
+
+        new_text_list = list()
+        new_lbs_list = list()
+
+        for sent_lens_inst, text_inst, lbs_inst in zip(self._sent_lens, self._text, self._lbs):
+            sent_ends = list(itertools.accumulate(sent_lens_inst, operator.add))
+            sent_starts = [0] + sent_ends[:-1]
+            text = [text_inst[s:e] for s, e in zip(sent_starts, sent_ends)]
+
+            split_tk_seqs = split_overlength_bert_input_sequence(text, tokenizer, max_seq_length)
+            split_sq_lens = [len(tk_seq) for tk_seq in split_tk_seqs]
+
+            seq_ends = list(itertools.accumulate(split_sq_lens, operator.add))
+            seq_starts = [0] + seq_ends[:-1]
+
+            split_lb_seqs = [lbs_inst[s:e] for s, e in zip(seq_starts, seq_ends)]
+
+            new_text_list += split_tk_seqs
+            new_lbs_list += split_lb_seqs
+
+        self._text = new_text_list
+        self._lbs = new_lbs_list
+
+        self._is_separated = True
+
+        return self
+
     def build_embs(self,
                    bert_model,
-                   device: Optional[torch.device] = torch.device('cpu'),
-                   save_dir: Optional[str] = None) -> "Dataset":
+                   device: Optional[torch.device] = torch.device('cpu')) -> "Dataset":
         """
         build bert embeddings
 
@@ -176,14 +223,13 @@ class Dataset(torch.utils.data.Dataset):
         ----------
         bert_model: the location/name of the bert model to use
         device: device
-        save_dir: location to update/store the BERT embeddings. Leave None if do not want to save
 
         Returns
         -------
         self (MultiSrcNERDataset)
         """
         assert bert_model is not None, AssertionError('Please specify BERT model to build embeddings')
-        if not self._sent_lens:
+        if (not self._sent_lens) or self._is_separated:
             text = self._text
         else:
             sent_ends = [list(itertools.accumulate(sent_lens, operator.add)) for sent_lens in self._sent_lens]
@@ -193,18 +239,60 @@ class Dataset(torch.utils.data.Dataset):
 
         logger.info(f'Building BERT embeddings with {bert_model} on {device}')
         self._embs = build_bert_token_embeddings(text, bert_model, bert_model, device=device)
-        if save_dir:
-            save_dir = os.path.normpath(save_dir)
-            logger.info(f'Saving embeddings to {save_dir}...')
-            embs = [emb.numpy().astype(np.float32) for emb in self.embs]
-            torch.save(embs, save_dir)
+        return self
+
+    def save(self, file_path: str):
+        """
+        Save the entire dataset for future usage
+
+        Parameters
+        ----------
+        file_path: path to the saved file
+
+        Returns
+        -------
+        self
+        """
+        attr_dict = dict()
+        for attr, value in self.__dict__.items():
+            if regex.match(f"^_[a-z]", attr):
+                if attr == '_embs':
+                    value = [emb.numpy().astype(np.float32) for emb in value]
+                attr_dict[attr] = value
+
+        torch.save(attr_dict, file_path)
+
+        return self
+
+    def load(self, file_path: str):
+        """
+        Load the entire dataset from disk
+
+        Parameters
+        ----------
+        file_path: path to the saved file
+
+        Returns
+        -------
+        self
+        """
+        attr_dict = torch.load(file_path)
+
+        for attr, value in attr_dict.items():
+            if attr not in self.__dict__:
+                logger.warning(f"Attribute {attr} is not natively defined in dataset!")
+
+            if attr == '_embs':
+                value = [torch.from_numpy(emb).to(torch.float) for emb in value]
+
+            setattr(self, attr, value)
+
         return self
 
 
 def load_data_from_json(file_dir: str):
     """
     Load data stored in the current data format.
-
 
     Parameters
     ----------
@@ -221,8 +309,9 @@ def load_data_from_json(file_dir: str):
     for i in range(len(data_dict)):
         data = data_dict[str(i)]
         # get tokens
-        tks = [regex.sub("[^{}]+".format(printable), "", tk) for tk in data['data']['text']]
-        sent_tks = ['[UNK]' if not tk else tk for tk in tks]
+        # tks = [regex.sub("[^{}]+".format(printable), "", tk) for tk in data['data']['text']]
+        # sent_tks = ['[UNK]' if not tk else tk for tk in tks]
+        sent_tks = data['data']['text']
         tk_seqs.append(sent_tks)
 
         # get sentence lengths
