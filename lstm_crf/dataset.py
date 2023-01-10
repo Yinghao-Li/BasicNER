@@ -7,14 +7,13 @@ import itertools
 import operator
 import numpy as np
 from typing import List, Optional
-from string import printable
 from dataclasses import dataclass
 from transformers import AutoTokenizer
 
 import torch
 from seqlbtoolkit.embs import build_bert_token_embeddings
 from seqlbtoolkit.data import span_to_label, span_list_to_dict
-from seqlbtoolkit.text import split_overlength_bert_input_sequence
+from seqlbtoolkit.text import split_overlength_bert_input_sequence, substitute_unknown_tokens
 from seqlbtoolkit.base_model.dataset import (
     DataInstance,
     feature_lists_to_instance_list,
@@ -137,6 +136,7 @@ class Dataset(torch.utils.data.Dataset):
 
             if config.separate_overlength_sequences:
                 self.separate_sequence(config.bert_model_name_or_path, config.max_seq_length)
+            self.substitute_unknown_tokens(config.bert_model_name_or_path)
 
             logger.info("Building BERT embeddings...")
             self.build_embs(config.bert_model_name_or_path, config.device)
@@ -162,6 +162,26 @@ class Dataset(torch.utils.data.Dataset):
             DataInstance,
             text=self._text, embs=self._embs, lbs=self._lbs
         )
+        return self
+
+    def substitute_unknown_tokens(self, tokenizer_or_name):
+        """
+        Substitute the tokens in the sequences that cannot be recognized by the tokenizer
+        This will not change sequence lengths
+
+        Parameters
+        ----------
+        tokenizer_or_name: bert tokenizer
+
+        Returns
+        -------
+        self
+        """
+
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_or_name) if isinstance(tokenizer_or_name, str) \
+            else tokenizer_or_name
+
+        self._text = [substitute_unknown_tokens(tk_seq, tokenizer) for tk_seq in self._text]
         return self
 
     def separate_sequence(self, tokenizer_or_name, max_seq_length):
@@ -313,9 +333,7 @@ def load_data_from_json(file_dir: str):
     for i in range(len(data_dict)):
         data = data_dict[str(i)]
         # get tokens
-        tks = [regex.sub("[^{}]+".format(printable), "", tk) for tk in data['data']['text']]
-        sent_tks = ['[UNK]' if not tk else tk for tk in tks]
-        # sent_tks = data['data']['text']
+        sent_tks = data['data']['text']
         tk_seqs.append(sent_tks)
 
         # get sentence lengths

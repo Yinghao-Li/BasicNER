@@ -140,11 +140,7 @@ class Trainer(BaseTrainer):
 
         step_idx = self._status.eval_step + 1
 
-        result_dict = {
-            "valid/precision": valid_results.precision,
-            "valid/recall": valid_results.recall,
-            "valid/f1": valid_results.f1
-        }
+        result_dict = {f"valid/{k}": v for k, v in valid_results.items()}
         wandb.log(data=result_dict, step=step_idx)
 
         # ----- check model performance and update buffer -----

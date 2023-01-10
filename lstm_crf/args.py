@@ -91,7 +91,7 @@ class Arguments:
     )
 
     def __post_init__(self):
-        self.apply_wandb = self.wandb_api_key and self.wandb_project and self.wandb_name
+        self.apply_wandb = self.wandb_project and self.wandb_name
 
     # The following three functions are copied from transformers.training_args
     @cached_property

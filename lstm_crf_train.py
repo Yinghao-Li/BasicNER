@@ -24,6 +24,8 @@ def main(args):
 
     config = Config().from_args(args).get_meta()
 
+    if args.apply_wandb and args.wandb_api_key:
+        wandb.login(key=args.wandb_api_key)
     wandb.init(
         project=args.wandb_project,
         name=args.wandb_name,
