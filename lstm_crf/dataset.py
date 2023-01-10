@@ -229,13 +229,18 @@ class Dataset(torch.utils.data.Dataset):
         """
         assert bert_model is not None, AssertionError('Please specify BERT model to build embeddings')
 
+        if self._is_separated:
+            sent_lens = [[len(tks)] for tks in self._text]
+        else:
+            sent_lens = self._sent_lens
+
         logger.info(f'Building BERT embeddings with {bert_model} on {device}')
         self._embs = build_bert_token_embeddings(
             self._text,
             bert_model,
             bert_model,
             device=device,
-            sent_lengths_list=self._sent_lens if not self._is_separated else None
+            sent_lengths_list=sent_lens
         )
         return self
 
@@ -258,6 +263,7 @@ class Dataset(torch.utils.data.Dataset):
                     value = [emb.numpy().astype(np.float32) for emb in value]
                 attr_dict[attr] = value
 
+        os.makedirs(os.path.dirname(os.path.normpath(file_path)), exist_ok=True)
         torch.save(attr_dict, file_path)
 
         return self
@@ -307,9 +313,9 @@ def load_data_from_json(file_dir: str):
     for i in range(len(data_dict)):
         data = data_dict[str(i)]
         # get tokens
-        # tks = [regex.sub("[^{}]+".format(printable), "", tk) for tk in data['data']['text']]
-        # sent_tks = ['[UNK]' if not tk else tk for tk in tks]
-        sent_tks = data['data']['text']
+        tks = [regex.sub("[^{}]+".format(printable), "", tk) for tk in data['data']['text']]
+        sent_tks = ['[UNK]' if not tk else tk for tk in tks]
+        # sent_tks = data['data']['text']
         tk_seqs.append(sent_tks)
 
         # get sentence lengths

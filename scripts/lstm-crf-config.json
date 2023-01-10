@@ -1,7 +1,8 @@
 {
   "data_dir": "./data/MSIE/",
   "output_dir": "./test/",
-  "bert_model_name_or_path": "distilbert-base-uncased",
-  "num_train_epochs": 10,
-  "debug": false
+  "bert_model_name_or_path": "bert-base-uncased",
+  "num_train_epochs": 100,
+  "debug": false,
+  "separate_overlength_sequences": true
 }
