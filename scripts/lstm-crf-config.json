@@ -4,5 +4,6 @@
   "bert_model_name_or_path": "bert-base-uncased",
   "num_train_epochs": 100,
   "debug": false,
-  "separate_overlength_sequences": true
+  "separate_overlength_sequences": true,
+  "overwrite_processed_dataset": true
 }

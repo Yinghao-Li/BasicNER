@@ -120,7 +120,7 @@ class Dataset(torch.utils.data.Dataset):
         file_path = os.path.normpath(os.path.join(config.data_dir, f"{partition}.json"))
         processed_data_path = os.path.join(config.data_dir, "processed", f"{bert_model_name}", f"{partition}.pt")
 
-        if os.path.exists(processed_data_path):
+        if os.path.exists(processed_data_path) and not config.overwrite_processed_dataset:
 
             logger.info(f"Loading pre-processed data from {processed_data_path}.")
             self.load(processed_data_path)

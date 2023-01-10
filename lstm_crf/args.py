@@ -58,6 +58,10 @@ class Arguments:
         default=512,
         metadata={"help": "The maximum length of a BERT token sequence."}
     )
+    overwrite_processed_dataset: Optional[bool] = field(
+        default=False,
+        metadata={'help': "Whether overwrite the processed dataset stored on disk."}
+    )
 
     # --- model arguments ---
     d_hidden: Optional[int] = field(
