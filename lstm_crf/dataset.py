@@ -42,9 +42,9 @@ class Dataset(torch.utils.data.Dataset):
         self._text = text
         self._lbs = lbs
         self._sent_lens = None
-        self._data_points = None
         # Whether the text and lbs sequences are separated according to maximum BERT input lengths
         self._is_separated = False
+        self.data_instances = None
 
     @property
     def n_insts(self):
@@ -78,7 +78,7 @@ class Dataset(torch.utils.data.Dataset):
         return self.n_insts
 
     def __getitem__(self, idx):
-        return self._data_points[idx]
+        return self.data_instances[idx]
 
     def __add__(self, other: "Dataset") -> "Dataset":
 
@@ -158,8 +158,8 @@ class Dataset(torch.utils.data.Dataset):
         lb2id_mapping = {lb: idx for idx, lb in enumerate(config.bio_label_types)}
         self._lbs = [torch.tensor([lb2id_mapping[lb] for lb in lbs], dtype=torch.long) for lbs in self._lbs]
 
-        self._data_points = feature_lists_to_instance_list(
-            DataInstance,
+        self.data_instances = feature_lists_to_instance_list(
+            NERDataInstance,
             text=self._text, embs=self._embs, lbs=self._lbs
         )
         return self
@@ -210,11 +210,8 @@ class Dataset(torch.utils.data.Dataset):
         new_lbs_list = list()
 
         for sent_lens_inst, text_inst, lbs_inst in zip(self._sent_lens, self._text, self._lbs):
-            sent_ends = list(itertools.accumulate(sent_lens_inst, operator.add))
-            sent_starts = [0] + sent_ends[:-1]
-            text = [text_inst[s:e] for s, e in zip(sent_starts, sent_ends)]
 
-            split_tk_seqs = split_overlength_bert_input_sequence(text, tokenizer, max_seq_length)
+            split_tk_seqs = split_overlength_bert_input_sequence(text_inst, tokenizer, max_seq_length, sent_lens_inst)
             split_sq_lens = [len(tk_seq) for tk_seq in split_tk_seqs]
 
             seq_ends = list(itertools.accumulate(split_sq_lens, operator.add))

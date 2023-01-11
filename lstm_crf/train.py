@@ -4,7 +4,6 @@ from typing import Optional
 
 import torch
 import wandb
-import numpy as np
 from seqlbtoolkit.base_model.train import BaseTrainer
 from seqlbtoolkit.base_model.eval import get_ner_metrics
 from tqdm.auto import tqdm
@@ -93,8 +92,9 @@ class Trainer(BaseTrainer):
             self.eval_and_save()
 
         test_results = self.test()
-        for k, v in test_results.items():
+        for k, v in test_results['micro avg'].items():
             wandb.run.summary[f"test/{k}"] = v
+        self.save_results_as_wandb_table(test_results)
 
         logger.info("Test results:")
         self.log_results(test_results)
@@ -150,7 +150,7 @@ class Trainer(BaseTrainer):
         self._status.eval_step += 1
         return None
 
-    def evaluate(self, dataset: Dataset):
+    def evaluate(self, dataset: Dataset, detailed_result: Optional[bool] = False):
         data_loader = self.get_dataloader(dataset)
         self._model.to(self._device)
         self._model.eval()
@@ -168,42 +168,42 @@ class Trainer(BaseTrainer):
 
         true_lbs = [[self.config.bio_label_types[lb_index] for lb_index in label_indices]
                     for label_indices in dataset.lbs]
-        metric = get_ner_metrics(true_lbs, pred_lbs)
+        metric = get_ner_metrics(true_lbs, pred_lbs, detailed=detailed_result)
         return metric
-
-    def predict(self, dataset: Dataset):
-        data_loader = self.get_dataloader(dataset)
-        self._model.to(self._device)
-        self._model.eval()
-
-        pred_probs = list()
-        pred_lbs = list()
-        with torch.no_grad():
-            for inputs in data_loader:
-                inputs.to(self._device)
-
-                logits = self._model(inputs)
-
-                mask = ~inputs.padding_mask.view(-1)
-                pred_prob_batch = torch.sigmoid(logits.view(-1)[mask]).detach().cpu().numpy()
-                pred_probs.append(pred_prob_batch)
-                pred_lb_batch = (pred_prob_batch > 0.5).astype(int)
-                pred_lbs.append(pred_lb_batch)
-
-        pred_probs = np.concatenate(pred_probs)
-        pred_lbs = np.concatenate(pred_lbs)
-
-        return pred_lbs, pred_probs
 
     def test(self):
 
         if self._status.model_buffer.size == 1:
             self._model.load_state_dict(self._status.model_buffer.model_state_dicts[0])
-            return super().test()
+            metrics = self.evaluate(self._test_dataset, detailed_result=True)
+            return metrics
 
         raise NotImplementedError("Function for multi-checkpoint caching & evaluation is not implemented!")
 
     @staticmethod
     def log_results(metrics):
-        for k, v in metrics.items():
-            logger.info(f"  {k}: {v:.4f}.")
+        if isinstance(metrics, dict):
+            for key, val in metrics.items():
+                logger.info(f"[{key}]")
+                for k, v in val.items():
+                    logger.info(f"  {k}: {v:.4f}.")
+        else:
+            for k, v in metrics.items():
+                logger.info(f"  {k}: {v:.4f}.")
+
+    @staticmethod
+    def save_results_as_wandb_table(metrics: dict, table_name: Optional[str] = 'test_results'):
+        """
+        Save dictionary results in a wandb table
+        """
+        columns = ['Entity Type', 'Precision', 'Recall', 'F1']
+        tb = wandb.Table(columns)
+
+        for ent, metrics in metrics.items():
+            row = [ent]
+            for value in metrics.values():
+                row.append(value)
+            tb.add_data(*row)
+        wandb.run.log({table_name: tb})
+
+        return None
