@@ -200,9 +200,7 @@ class Trainer(BaseTrainer):
         tb = wandb.Table(columns)
 
         for ent, metrics in metrics.items():
-            row = [ent]
-            for value in metrics.values():
-                row.append(value)
+            row = [ent] + [value for value in metrics.values()]
             tb.add_data(*row)
         wandb.run.log({table_name: tb})
 
