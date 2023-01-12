@@ -3,16 +3,17 @@ import logging
 from typing import Optional
 
 import torch
+import numpy as np
 import wandb
 from seqlbtoolkit.base_model.train import BaseTrainer
 from seqlbtoolkit.base_model.eval import get_ner_metrics
 from tqdm.auto import tqdm
+from transformers import AutoTokenizer, AutoModelForTokenClassification, get_scheduler
 
-from .status import Status
 from .args import Config
 from .dataset import Dataset
-from .collator import collator
-from .model import BiRnnCrf
+from .collator import DataCollator
+from ..base.status import Status
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +25,15 @@ class Trainer(BaseTrainer):
 
     def __init__(self,
                  config: Config,
-                 collate_fn=collator,
+                 collate_fn=None,
                  model=None,
                  training_dataset: Optional[Dataset] = None,
                  valid_dataset: Optional[Dataset] = None,
                  test_dataset: Optional[Dataset] = None):
+
+        if not collate_fn:
+            tokenizer = AutoTokenizer.from_pretrained(config.bert_model_name_or_path)
+            collate_fn = DataCollator(tokenizer)
 
         super().__init__(
             config=config,
@@ -40,6 +45,7 @@ class Trainer(BaseTrainer):
 
         self._model = model
         self._optimizer = None
+        self._scheduler = None
         self._loss_fn = None
         self._status = Status()
         self.initialize()
@@ -57,7 +63,10 @@ class Trainer(BaseTrainer):
         return self._test_dataset
 
     def initialize_model(self):
-        self._model = BiRnnCrf(config=self.config)
+        self._model = AutoModelForTokenClassification.from_pretrained(
+            pretrained_model_name_or_path=self._config.bert_model_name_or_path,
+            num_labels=self.config.n_lbs
+        )
         return self
 
     def initialize_optimizer(self, optimizer=None):
@@ -74,12 +83,32 @@ class Trainer(BaseTrainer):
             )
         return self
 
+    def initialize_scheduler(self, scheduler=None):
+        """
+        Initialize learning rate scheduler
+        """
+        num_update_steps_per_epoch = int(np.ceil(
+            len(self._training_dataset) / self._config.batch_size
+        ))
+        num_warmup_steps = int(np.ceil(
+            num_update_steps_per_epoch * self._config.warmup_ratio * self._config.num_train_epochs
+        ))
+        num_training_steps = int(np.ceil(num_update_steps_per_epoch * self._config.num_train_epochs))
+
+        self._scheduler = get_scheduler(
+            self._config.lr_scheduler_type,
+            self._optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps,
+        )
+        return self
+
     def run(self):
         self._model.to(self._device)
 
         self._status.init(self.config.model_buffer_size, False)
         # ----- start training process -----
-        logger.info("Start training BERT...")
+        logger.info("Start training...")
         for epoch_i in range(self._config.num_train_epochs):
             logger.info("------")
             logger.info(f"Epoch {epoch_i + 1} of {self._config.num_train_epochs}")
@@ -120,11 +149,12 @@ class Trainer(BaseTrainer):
             inputs.to(self._device)
 
             # training step
-            loss = self._model.loss(inputs)
+            loss = self._model(**inputs.__dict__).loss
             loss.backward()
             # track loss
-            train_loss += loss.detach().cpu()
+            train_loss += loss.detach().cpu() * len(inputs)
             self._optimizer.step()
+            self._scheduler.step()
             self._optimizer.zero_grad()
 
         return train_loss
@@ -160,15 +190,14 @@ class Trainer(BaseTrainer):
             for inputs in data_loader:
                 inputs.to(self._device)
 
-                _, pred_ids = self._model(inputs)
+                logits = self._model(**inputs.__dict__).logits
+                pred_ids = logits.argmax(-1).detach().cpu()
 
-                pred_lb_batch = [[self.config.bio_label_types[lb_index] for lb_index in label_indices]
-                                 for label_indices in pred_ids]
+                pred_lb_batch = [[self.config.bio_label_types[i] for i in pred[lbs >= 0]]
+                                 for lbs, pred in zip(inputs.labels.cpu(), pred_ids)]
                 pred_lbs += pred_lb_batch
 
-        true_lbs = [[self.config.bio_label_types[lb_index] for lb_index in label_indices]
-                    for label_indices in dataset.lbs]
-        metric = get_ner_metrics(true_lbs, pred_lbs, detailed=detailed_result)
+        metric = get_ner_metrics(dataset.lbs, pred_lbs, detailed=detailed_result)
         return metric
 
     def test(self):

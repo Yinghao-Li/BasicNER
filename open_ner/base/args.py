@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Arguments:
+class BaseArguments:
     """
     Arguments regarding the training of Neural hidden Markov Model
     """
@@ -61,11 +61,6 @@ class Arguments:
     overwrite_processed_dataset: Optional[bool] = field(
         default=False,
         metadata={'help': "Whether overwrite the processed dataset stored on disk."}
-    )
-
-    # --- model arguments ---
-    d_hidden: Optional[int] = field(
-        default=128, metadata={'help': 'Model hidden dimension.'}
     )
 
     # --- training arguments ---
@@ -133,9 +128,7 @@ class Arguments:
 
 
 @dataclass
-class Config(Arguments, BaseNERConfig):
-
-    d_emb = None
+class BaseConfig(BaseArguments, BaseNERConfig):
 
     def get_meta(self):
 

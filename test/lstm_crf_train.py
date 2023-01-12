@@ -13,9 +13,9 @@ from transformers import (
 
 from seqlbtoolkit.io import set_logging, logging_args
 
-from lstm_crf.args import Arguments, Config
-from lstm_crf.dataset import Dataset
-from lstm_crf.train import Trainer
+from open_ner.lstm_crf.args import Arguments, Config
+from open_ner.lstm_crf.dataset import Dataset
+from open_ner.lstm_crf.train import Trainer
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +91,11 @@ if __name__ == '__main__':
         arguments, = parser.parse_args_into_dataclasses()
 
     if not getattr(arguments, "log_dir", None):
-        arguments.log_dir = os.path.join('logs', f'{_current_file_name}', f'{_time}.log')
+        arguments.log_dir = os.path.join('../logs', f'{_current_file_name}', f'{_time}.log')
 
     set_logging(log_dir=arguments.log_dir)
     logging_args(arguments)
 
     set_seed(arguments.seed)
 
-    try:
-        main(args=arguments)
-    except Exception as e:
-        logger.exception(e)
-        raise e
+    main(args=arguments)

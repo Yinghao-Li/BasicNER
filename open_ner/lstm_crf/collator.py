@@ -6,7 +6,7 @@ import torch
 from typing import List
 from seqlbtoolkit.base_model.dataset import instance_list_to_feature_lists
 
-from .dataset import NERDataInstance
+from .dataset import LSTMDataInstance
 
 
 class Batch:
@@ -29,7 +29,7 @@ class Batch:
                 return v.size(0)
 
 
-def collator(instance_list: List[NERDataInstance]):
+def collator(instance_list: List[LSTMDataInstance]):
 
     embs, lbs = instance_list_to_feature_lists(instance_list, ['embs', 'lbs'])
 
