@@ -14,12 +14,7 @@ from transformers import (
 from chemdataextractor.doc import Paragraph
 
 from seqlbtoolkit.io import set_logging, logging_args, save_json
-from seqlbtoolkit.data import (
-    respan,
-    span_dict_to_list,
-    merge_list_of_lists,
-    label_to_span
-)
+from seqlbtoolkit.data import respan, span_dict_to_list, merge_list_of_lists
 
 
 logger = logging.getLogger(__name__)
@@ -46,29 +41,29 @@ class Arguments:
 
 
 def process(args: Arguments):
-    ents = set()
+    ents = list()
     for partition in ('train', 'valid', 'test'):
         with open(os.path.join(args.data_dir, f"{partition}.txt"), 'r', encoding='utf-8') as f:
             instances = json.load(f)
 
-        text_list = merge_list_of_lists(instances['text'])
-        lbs_list = merge_list_of_lists(instances['label'])
+        text_list = [inst['text'] for inst in instances]
+        ent_list = [{(d['start_offset'], d['end_offset']): d['label'] for d in instance['entities']}
+                    for instance in instances]
 
         output_dict = dict()
-        for idx, (text, lbs) in enumerate(zip(text_list, lbs_list)):
+        for idx, (text, ent_spans) in enumerate(zip(text_list, ent_list)):
             raw_tks = Paragraph(' '.join(text)).raw_tokens
             cde_tks = merge_list_of_lists(raw_tks)
-            ori_spans = label_to_span(lbs)
-            ent_spans = {k: v for k, v in ori_spans.items() if v != 'ES'}
             cde_ent_spans = span_dict_to_list(respan(text, cde_tks, ent_spans))
             sent_lengths = [len(tk_seq) for tk_seq in raw_tks]
 
             output_dict[f"{idx}"] = {"label": cde_ent_spans, "data": {"text": cde_tks, 'sent_lengths': sent_lengths}}
 
-            ents.update(ent_spans.values())
+        ents += merge_list_of_lists([[d['label'] for d in instance['entities']] for instance in instances])
 
         save_json(output_dict, os.path.join(args.output_dir, f"{partition}.json"), collapse_level=4)
 
+    ents = set(ents)
     save_json({'entity_types': list(ents)}, os.path.join(args.output_dir, "meta.json"))
 
 

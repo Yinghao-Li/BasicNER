@@ -1,9 +1,8 @@
 {
   "entity_types": [
-    "CN",
-    "Condition",
+    "PV",
     "PN",
-    "ES",
-    "PV"
+    "CN",
+    "Condition"
   ]
 }
