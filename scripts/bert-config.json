@@ -5,6 +5,6 @@
   "num_train_epochs": 10,
   "debug": true,
   "separate_overlength_sequences": true,
-  "overwrite_processed_dataset": false,
+  "overwrite_processed_dataset": true,
   "learning_rate": 5e-5
 }

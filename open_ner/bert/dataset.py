@@ -6,8 +6,7 @@ from dataclasses import dataclass
 
 import torch
 from seqlbtoolkit.base_model.dataset import feature_lists_to_instance_list
-from tokenizations import get_alignments
-from transformers import AutoTokenizer, DataCollatorForTokenClassification
+from transformers import AutoTokenizer
 
 from .args import Config
 from ..base.dataset import BaseDataset, BaseDataInstance, load_data_from_json
@@ -24,6 +23,7 @@ class BertDataInstance(BaseDataInstance):
     bert_lbs = None
 
 
+# noinspection PyComparisonWithNone
 class Dataset(BaseDataset):
     def __init__(self,
                  text: Optional[List[List[str]]] = None,
@@ -124,29 +124,30 @@ class Dataset(BaseDataset):
 
         bert_lbs_list = list()
         bert_tk_masks = list()
-        for tks, bert_tk_idx_list, lbs in zip(self._text, self._bert_tk_ids, self._lbs):
-            tk_mapping, _ = get_alignments(tks, tokenizer.convert_ids_to_tokens(bert_tk_idx_list))
+        for idx, (tks, bert_tk_idx_list, lbs) in enumerate(zip(self._text, self._bert_tk_ids, self._lbs)):
 
-            for tk, map_ids in zip(tks, tk_mapping):
-                assert map_ids, ValueError(f"Cannot map token {tk} to BERT tokens!")
-            involved_bert_tk_ids = [map_ids[0] for map_ids in tk_mapping]
+            word_ids = tokenized_text.word_ids(idx)
+
+            word_ids_shifted_left = np.asarray([-100] + word_ids[:-1])
+            word_ids = np.asarray(word_ids)
+
+            is_first_wordpiece = (word_ids_shifted_left != word_ids) & (word_ids != None)
+            word_ids[~is_first_wordpiece] = -100  # could be anything less than 0
+
+            # this should not happen
+            if np.setdiff1d(np.arange(len(tks)), word_ids).size > 0:
+                raise ValueError("Failed to map all tokens to BERT tokens! "
+                                 "Consider running `substitute_unknown_tokens` before calling this function")
 
             bert_lbs = torch.full((len(bert_tk_idx_list), ), -100)
-            bert_lbs[involved_bert_tk_ids] = torch.tensor([lb2idx[lb] for lb in lbs])
+            bert_lbs[is_first_wordpiece] = torch.tensor([lb2idx[lb] for lb in lbs])
             bert_lbs_list.append(bert_lbs)
 
             masks = np.zeros(len(bert_tk_idx_list), dtype=bool)
-            masks[involved_bert_tk_ids] = True
+            masks[is_first_wordpiece] = True
             bert_tk_masks.append(masks)
 
         self._bert_lbs = bert_lbs_list
         self._bert_tk_masks = bert_tk_masks
 
         return self
-
-
-
-
-
-
-
