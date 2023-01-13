@@ -27,7 +27,7 @@ class Dataset(BaseDataset):
                  text: Optional[List[List[str]]] = None,
                  embs: Optional[List[torch.Tensor]] = None,
                  lbs: Optional[List[List[str]]] = None):
-        super(BaseDataset).__init__(text=text, lbs=lbs)
+        super().__init__(text=text, lbs=lbs)
         self._embs = embs
 
     @property

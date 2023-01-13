@@ -105,8 +105,8 @@ class BaseDataset(torch.utils.data.Dataset):
         self
         """
 
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_or_name) if isinstance(tokenizer_or_name, str) \
-            else tokenizer_or_name
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_or_name, add_prefix_space=True) \
+            if isinstance(tokenizer_or_name, str) else tokenizer_or_name
 
         self._text = [substitute_unknown_tokens(tk_seq, tokenizer) for tk_seq in self._text]
         return self
@@ -128,8 +128,8 @@ class BaseDataset(torch.utils.data.Dataset):
             logger.warning("The sequences are already separated!")
             return self
 
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_or_name) if isinstance(tokenizer_or_name, str) \
-            else tokenizer_or_name
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_or_name, add_prefix_space=True) \
+            if isinstance(tokenizer_or_name, str) else tokenizer_or_name
 
         if (np.array([len(tk_ids) for tk_ids in tokenizer(
                 self._text, add_special_tokens=True, is_split_into_words=True
