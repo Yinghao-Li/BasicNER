@@ -62,6 +62,10 @@ class BaseArguments:
         default=False,
         metadata={'help': "Whether overwrite the processed dataset stored on disk."}
     )
+    training_ratio: Optional[float] = field(
+        default=None,
+        metadata={'help': "Whether down-sampling the training set and the ratio to down-sample"}
+    )
 
     # --- training arguments ---
     batch_size: Optional[int] = field(
@@ -130,6 +134,8 @@ class BaseArguments:
 @dataclass
 class BaseConfig(BaseArguments, BaseNERConfig):
 
+    training_ids = None
+
     def get_meta(self):
 
         # Load meta if exist
@@ -143,6 +149,9 @@ class BaseConfig(BaseArguments, BaseNERConfig):
 
         self.entity_types = meta_dict['entity_types']
         self.bio_label_types = entity_to_bio_labels(meta_dict['entity_types'])
+
+        if self.training_ratio:
+            self.training_ids = meta_dict['training_downsampling'][str(self.training_ratio)]
 
         return self
 

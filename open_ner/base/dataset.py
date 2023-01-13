@@ -172,6 +172,18 @@ class BaseDataset(torch.utils.data.Dataset):
 
         return self
 
+    def downsample_training_set(self, ids: List[int]):
+        for attr in self.__dict__.keys():
+            if regex.match(f"^_[a-z]", attr):
+                try:
+                    values = getattr(self, attr)
+                    sampled_values = [values[idx] for idx in ids]
+                    setattr(self, attr, sampled_values)
+                except TypeError:
+                    pass
+
+        return self
+
     def save(self, file_path: str):
         """
         Save the entire dataset for future usage

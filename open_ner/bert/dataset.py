@@ -91,6 +91,9 @@ class Dataset(BaseDataset):
         if config.debug:
             self.prepare_debug()
 
+        if partition == 'train' and config.training_ratio:
+            self.downsample_training_set(config.training_ids)
+
         self.data_instances = feature_lists_to_instance_list(
             BertDataInstance,
             bert_tk_ids=self._bert_tk_ids, bert_attn_masks=self._bert_attn_masks, bert_lbs=self._bert_lbs

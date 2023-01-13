@@ -105,10 +105,10 @@ class Dataset(BaseDataset):
             self.save(processed_data_path)
 
         if config.debug:
-            self._text = self._text[:100]
-            self._lbs = self._lbs[:100]
-            self._sent_lens = self._sent_lens[:100]
-            self._embs = self._embs[:100]
+            self.prepare_debug()
+
+        if partition == 'train' and config.training_ratio:
+            self.downsample_training_set(config.training_ids)
 
         logger.info(f'Data loaded.')
 
