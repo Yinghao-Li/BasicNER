@@ -1,7 +1,7 @@
 {
-  "data_dir": "../data/LaptopReview/",
+  "data_dir": "./data/MSIE/",
   "output_dir": "./output/",
-  "bert_model_name_or_path": "distilbert-base-uncased",
+  "bert_model_name_or_path": "roberta-base",
   "num_train_epochs": 10,
   "debug": true,
   "separate_overlength_sequences": true,

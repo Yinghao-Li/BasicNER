@@ -115,7 +115,7 @@ class Dataset(BaseDataset):
 
         # exclude over-length instances
         encoded_token_lens = np.array([len(tks) for tks in tokenized_text.input_ids])
-        assert (encoded_token_lens <= tokenizer.max_model_input_sizes[tokenizer_name]).all(), \
+        assert (encoded_token_lens <= tokenizer.max_model_input_sizes.get(tokenizer_name, 512)).all(), \
             ValueError("One or more sequences are longer than the maximum model input size. "
                        "Consider using `self.separate_sequence` to break them into smaller pieces.")
 
