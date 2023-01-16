@@ -161,7 +161,7 @@ class BaseConfig(BaseArguments, BaseNERConfig):
         if self.training_ratio:
             self.training_ids = meta_dict['training_downsampling'][str(self.training_ratio)]
 
-        if self.num_few_shot and self.few_shot_instance_idx:
+        if self.num_few_shot and self.few_shot_instance_idx is not None:
             assert not self.training_ids, \
                 ValueError("Should not assign training ratio argument and few-shot learning argument at the same time!")
             self.training_ids = meta_dict['few_shot'][str(self.num_few_shot)][str(self.few_shot_instance_idx)]

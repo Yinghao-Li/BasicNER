@@ -1,10 +1,12 @@
 {
-  "data_dir": "./data/MSIE/",
+  "data_dir": "./data/MSIE-sent/",
   "output_dir": "./output/",
-  "bert_model_name_or_path": "roberta-base",
+  "bert_model_name_or_path": "bert-base-uncased",
   "num_train_epochs": 10,
-  "debug": true,
+  "debug": false,
   "separate_overlength_sequences": true,
-  "overwrite_processed_dataset": true,
-  "learning_rate": 5e-5
+  "overwrite_processed_dataset": false,
+  "learning_rate": 5e-5,
+  "num_few_shot": 5,
+  "few_shot_instance_idx": 0
 }
