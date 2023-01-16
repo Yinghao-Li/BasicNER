@@ -107,7 +107,7 @@ class Dataset(BaseDataset):
         if config.debug:
             self.prepare_debug()
 
-        if partition == 'train' and config.training_ratio:
+        if partition == 'train' and config.training_ids:
             self.downsample_training_set(config.training_ids)
 
         logger.info(f'Data loaded.')

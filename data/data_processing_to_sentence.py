@@ -2,6 +2,7 @@
 import os
 import sys
 import json
+import random
 import logging
 from datetime import datetime
 from typing import Optional
@@ -14,7 +15,14 @@ from transformers import (
 from chemdataextractor.doc import Paragraph
 
 from seqlbtoolkit.io import set_logging, logging_args, save_json
-from seqlbtoolkit.data import respan, span_dict_to_list, merge_list_of_lists
+from seqlbtoolkit.data import (
+    respan,
+    span_dict_to_list,
+    label_to_span,
+    span_to_label,
+    merge_list_of_lists,
+    split_list_by_lengths
+)
 
 
 logger = logging.getLogger(__name__)
@@ -41,30 +49,55 @@ class Arguments:
 
 
 def process(args: Arguments):
-    ents = list()
+    ents = set()
+    sample_dict = dict()
     for partition in ('train', 'valid', 'test'):
         with open(os.path.join(args.data_dir, f"{partition}.txt"), 'r', encoding='utf-8') as f:
             instances = json.load(f)
 
-        text_list = [inst['text'] for inst in instances]
-        ent_list = [{(d['start_offset'], d['end_offset']): d['label'] for d in instance['entities']}
-                    for instance in instances]
+        text_list = merge_list_of_lists(instances['text'])
+        lbs_list = merge_list_of_lists(instances['label'])
 
         output_dict = dict()
-        for idx, (text, ent_spans) in enumerate(zip(text_list, ent_list)):
-            raw_tks = Paragraph(' '.join(text)).raw_tokens
-            cde_tks = merge_list_of_lists(raw_tks)
-            cde_ent_spans = span_dict_to_list(respan(text, cde_tks, ent_spans))
-            sent_lengths = [len(tk_seq) for tk_seq in raw_tks]
 
-            output_dict[f"{idx}"] = {"label": cde_ent_spans, "data": {"text": cde_tks, 'sent_lengths': sent_lengths}}
+        idx = 0
+        for text, lbs in zip(text_list, lbs_list):
+            cde_sents = Paragraph(' '.join(text)).raw_tokens
+            cde_tks = merge_list_of_lists(cde_sents)
 
-        ents += merge_list_of_lists([[d['label'] for d in instance['entities']] for instance in instances])
+            ori_spans = label_to_span(lbs)
+            ent_spans = {k: v for k, v in ori_spans.items() if v != 'ES'}
+            cde_ent_spans = respan(text, cde_tks, ent_spans)
+            cde_lbs = span_to_label(cde_ent_spans, cde_tks)
+
+            sent_lengths = [len(tk_seq) for tk_seq in cde_sents]
+            cde_sent_lbs = split_list_by_lengths(cde_lbs, sent_lengths)
+
+            cde_sent_ent_spans = [span_dict_to_list(label_to_span(sent_lbs)) for sent_lbs in cde_sent_lbs]
+
+            for sent_tks, sent_ent_spans in zip(cde_sents, cde_sent_ent_spans):
+
+                output_dict[f"{idx}"] = {
+                    "label": sent_ent_spans,
+                    "data": {"text": sent_tks, "sent_lengths": [len(sent_tks)]}
+                }
+                idx += 1
+
+            ents.update(ent_spans.values())
 
         save_json(output_dict, os.path.join(args.output_dir, f"{partition}.json"), collapse_level=4)
 
-    ents = set(ents)
-    save_json({'entity_types': list(ents)}, os.path.join(args.output_dir, "meta.json"))
+        if partition == 'train':
+            n_sents = idx
+
+            for n_samples in (5, 10, 20, 50, 100):
+                sample_dict[n_samples] = {i: sorted(random.sample(range(n_sents), n_samples)) for i in range(10)}
+
+    save_json(
+        {'entity_types': list(ents), 'few_shot': sample_dict},
+        os.path.join(args.output_dir, "meta.json"),
+        collapse_level=4
+    )
 
 
 if __name__ == '__main__':

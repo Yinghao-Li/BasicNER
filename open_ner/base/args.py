@@ -66,6 +66,14 @@ class BaseArguments:
         default=None,
         metadata={'help': "Whether down-sampling the training set and the ratio to down-sample"}
     )
+    num_few_shot: Optional[int] = field(
+        default=None,
+        metadata={'help': "Number of instance to use while doing few-shot learning."}
+    )
+    few_shot_instance_idx: Optional[int] = field(
+        default=None,
+        metadata={'help': "The index of the selected training instances list."}
+    )
 
     # --- training arguments ---
     batch_size: Optional[int] = field(
@@ -152,6 +160,11 @@ class BaseConfig(BaseArguments, BaseNERConfig):
 
         if self.training_ratio:
             self.training_ids = meta_dict['training_downsampling'][str(self.training_ratio)]
+
+        if self.num_few_shot and self.few_shot_instance_idx:
+            assert not self.training_ids, \
+                ValueError("Should not assign training ratio argument and few-shot learning argument at the same time!")
+            self.training_ids = meta_dict['few_shot'][str(self.num_few_shot)][str(self.few_shot_instance_idx)]
 
         return self
 

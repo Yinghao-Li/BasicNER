@@ -91,7 +91,7 @@ class Dataset(BaseDataset):
         if config.debug:
             self.prepare_debug()
 
-        if partition == 'train' and config.training_ratio:
+        if partition == 'train' and config.training_ids:
             self.downsample_training_set(config.training_ids)
 
         self.data_instances = feature_lists_to_instance_list(

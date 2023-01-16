@@ -91,7 +91,7 @@ if __name__ == '__main__':
         arguments, = parser.parse_args_into_dataclasses()
 
     if not getattr(arguments, "log_dir", None):
-        arguments.log_dir = os.path.join('../logs', f'{_current_file_name}', f'{_time}.log')
+        arguments.log_dir = os.path.join('./logs', f'{_current_file_name}', f'{_time}.log')
 
     set_logging(log_dir=arguments.log_dir)
     logging_args(arguments)
