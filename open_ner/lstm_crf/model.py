@@ -12,6 +12,9 @@ class BiRnnCrf(nn.Module):
     def __init__(self, config: Config, num_rnn_layers=1, rnn="lstm"):
         super(BiRnnCrf, self).__init__()
 
+        self._have_embedding_layer = config.disable_bert_embeddings
+        self.emb = nn.Embedding(config.n_vocab, config.d_emb, config.pad_tk_idx) if self._have_embedding_layer else None
+
         rnn = nn.LSTM if rnn == "lstm" else nn.GRU
         self.rnn = rnn(
             config.d_emb,
@@ -24,9 +27,11 @@ class BiRnnCrf(nn.Module):
 
     def _build_features(self, inputs):
 
+        embs = self.emb(inputs.input_ids) if self._have_embedding_layer else inputs.embs
+
         seq_length = inputs.padding_mask.sum(1)
         sorted_seq_length, perm_idx = seq_length.sort(descending=True)
-        embeds = inputs.embs[perm_idx, :]
+        embeds = embs[perm_idx, :]
 
         pack_sequence = pack_padded_sequence(embeds, lengths=sorted_seq_length.cpu(), batch_first=True)
         packed_output, _ = self.rnn(pack_sequence)

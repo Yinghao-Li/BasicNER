@@ -4,51 +4,41 @@
 import torch
 
 from typing import List
-from seqlbtoolkit.base_model.dataset import instance_list_to_feature_lists
+from seqlbtoolkit.base_model.dataset import Batch, instance_list_to_feature_lists
 
 from .dataset import LSTMDataInstance
 
 
-class Batch:
-    def __init__(self, **kwargs):
-        super().__init__()
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+class DataCollator:
+    def __init__(self, pad_idx=0):
+        self.pad_idx = pad_idx
 
-    def to(self, device):
-        for k, v in self.__dict__.items():
-            try:
-                setattr(self, k, v.to(device))
-            except AttributeError:
-                pass
-        return self
+    def __call__(self, instance_list: List[LSTMDataInstance]):
 
-    def __len__(self):
-        for v in list(self.__dict__.values()):
-            if isinstance(v, torch.Tensor):
-                return v.size(0)
+        text_ids, embs, lbs = instance_list_to_feature_lists(instance_list, ['text_ids', 'embs', 'lbs'])
 
+        seq_lengths = [f.size(0) for f in embs] if embs[0] is not None else [len(tk_ids) for tk_ids in text_ids]
+        max_length = max(seq_lengths)
 
-def collator(instance_list: List[LSTMDataInstance]):
+        txt_emb_batch = None
+        txt_ids_batch = None
+        if embs[0] is not None:
+            feature_dim = embs[0].size(-1)
+            txt_emb_batch = torch.stack([
+                torch.cat((tk_embs, torch.zeros(max_length - len(tk_embs), feature_dim)), dim=0) for tk_embs in embs
+            ])
+        elif text_ids[0] is not None:
+            txt_ids_batch = torch.stack([
+                torch.tensor(tk_ids + [self.pad_idx] * (max_length - len(tk_ids))) for tk_ids in text_ids
+            ])
+        else:
+            raise ValueError("Text ids and embs cannot be None at the same time!")
 
-    embs, lbs = instance_list_to_feature_lists(instance_list, ['embs', 'lbs'])
+        lbs_batch = torch.stack([
+            # torch.tensor(lb + [-1] * (max_length - len(lb)), dtype=torch.long) for lb in lbs
+            torch.cat((lb, torch.full((max_length - len(lb), ), 0)), dim=0) for lb in lbs
+        ])
 
-    seq_lengths = [f.size(0) for f in embs]
-    max_length = max(seq_lengths)
-    feature_dim = embs[0].size(-1)
+        padding_mask_batch = torch.arange(max_length)[None, :] < torch.tensor(seq_lengths)[:, None]
 
-    txt_emb_batch = torch.stack([
-        torch.cat((tk_embs, torch.zeros(max_length - len(tk_embs), feature_dim)), dim=0) for tk_embs in embs
-    ])
-    lbs_batch = torch.stack([
-        # torch.tensor(lb + [-1] * (max_length - len(lb)), dtype=torch.long) for lb in lbs
-        torch.cat((lb, torch.full((max_length - len(lb), ), 0)), dim=0) for lb in lbs
-    ])
-
-    padding_mask_batch = torch.arange(max_length)[None, :] < torch.tensor(seq_lengths)[:, None]
-
-    return Batch(
-        embs=txt_emb_batch,
-        lbs=lbs_batch,
-        padding_mask=padding_mask_batch,
-    )
+        return Batch(input_ids=txt_ids_batch, embs=txt_emb_batch, lbs=lbs_batch, padding_mask=padding_mask_batch)

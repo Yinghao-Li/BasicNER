@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 def main(args):
 
     config = Config().from_args(args).get_meta()
+    if config.disable_bert_embeddings:
+        config.load_vocab()
 
     if args.apply_wandb and args.wandb_api_key:
         wandb.login(key=args.wandb_api_key)

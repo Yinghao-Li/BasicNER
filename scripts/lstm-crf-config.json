@@ -4,7 +4,7 @@
   "bert_model_name_or_path": "distilbert-base-uncased",
   "num_train_epochs": 100,
   "debug": false,
-  "training_ratio": 0.2,
   "separate_overlength_sequences": true,
-  "overwrite_processed_dataset": true
+  "overwrite_processed_dataset": true,
+  "disable_bert_embeddings": true
 }

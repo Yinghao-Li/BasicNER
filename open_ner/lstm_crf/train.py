@@ -7,7 +7,7 @@ from tqdm.auto import tqdm
 
 from .args import Config
 from .dataset import Dataset
-from .collator import collator
+from .collator import DataCollator
 from .model import BiRnnCrf
 from ..base.train import BaseNERTrainer
 
@@ -21,11 +21,14 @@ class Trainer(BaseNERTrainer):
 
     def __init__(self,
                  config: Config,
-                 collate_fn=collator,
+                 collate_fn=None,
                  model=None,
                  training_dataset: Optional[Dataset] = None,
                  valid_dataset: Optional[Dataset] = None,
                  test_dataset: Optional[Dataset] = None):
+
+        if not collate_fn:
+            collate_fn = DataCollator(config.pad_tk_idx)
 
         super().__init__(
             config=config,

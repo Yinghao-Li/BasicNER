@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LSTMDataInstance(BaseDataInstance):
     embs: torch.Tensor = None
+    text_ids: List[str] = None
 
 
 class Dataset(BaseDataset):
@@ -29,6 +30,7 @@ class Dataset(BaseDataset):
                  lbs: Optional[List[List[str]]] = None):
         super().__init__(text=text, lbs=lbs)
         self._embs = embs
+        self._text_ids = None
 
     @property
     def embs(self):
@@ -76,9 +78,15 @@ class Dataset(BaseDataset):
             bert_model_name = config.bert_model_name_or_path
 
         file_path = os.path.normpath(os.path.join(config.data_dir, f"{partition}.json"))
-        processed_data_path = os.path.join(
-            config.data_dir, "processed", "lstm-crf", f"{bert_model_name}", f"{partition}.pt"
-        )
+
+        if config.disable_bert_embeddings:
+            processed_data_path = os.path.join(
+                config.data_dir, "processed", "lstm-crf", "no-bert", f"{partition}.pt"
+            )
+        else:
+            processed_data_path = os.path.join(
+                config.data_dir, "processed", "lstm-crf", f"{bert_model_name}", f"{partition}.pt"
+            )
 
         if os.path.exists(processed_data_path) and not config.overwrite_processed_dataset:
 
@@ -94,12 +102,24 @@ class Dataset(BaseDataset):
             self._lbs = label_list
             self._sent_lens = sent_lens
 
-            if config.separate_overlength_sequences:
-                self.separate_sequence(config.bert_model_name_or_path, config.max_seq_length)
-            self.substitute_unknown_tokens(config.bert_model_name_or_path)
+            # use embedding layer
+            if config.disable_bert_embeddings:
+                tk2idx = {tk: idx for idx, tk in enumerate(config.vocab)}
+                self._text_ids = [[tk2idx.get(tk, config.unk_tk_idx) for tk in tk_seq] for tk_seq in self._text]
 
-            logger.info("Building BERT embeddings...")
-            self.build_embs(config.bert_model_name_or_path, config.device)
+                self._embs = [None] * len(self._text)
+
+            # use bert embeddings
+            else:
+                if config.separate_overlength_sequences:
+                    self.separate_sequence(config.bert_model_name_or_path, config.max_seq_length)
+                self.substitute_unknown_tokens(config.bert_model_name_or_path)
+
+                logger.info("Building BERT embeddings...")
+                self.build_embs(config.bert_model_name_or_path, config.device)
+                config.d_emb = self._embs[0].shape[-1]
+
+                self._text_ids = [None] * len(self._text)
 
             logger.info(f"Saving pre-processed dataset to {processed_data_path}.")
             self.save(processed_data_path)
@@ -112,15 +132,13 @@ class Dataset(BaseDataset):
 
         logger.info(f'Data loaded.')
 
-        config.d_emb = self._embs[0].shape[-1]
-
         # convert labels to indices
         lb2id_mapping = {lb: idx for idx, lb in enumerate(config.bio_label_types)}
         self._lbs = [torch.tensor([lb2id_mapping[lb] for lb in lbs], dtype=torch.long) for lbs in self._lbs]
 
         self.data_instances = feature_lists_to_instance_list(
             LSTMDataInstance,
-            text=self._text, embs=self._embs, lbs=self._lbs
+            text=self._text, text_ids=self._text_ids, embs=self._embs, lbs=self._lbs
         )
         return self
 
@@ -172,7 +190,10 @@ class Dataset(BaseDataset):
         for attr, value in self.__dict__.items():
             if regex.match(f"^_[a-z]", attr):
                 if attr == '_embs':
-                    value = [emb.numpy().astype(np.float32) for emb in value]
+                    try:
+                        value = [emb.numpy().astype(np.float32) for emb in value]
+                    except AttributeError:
+                        pass
                 attr_dict[attr] = value
 
         os.makedirs(os.path.dirname(os.path.normpath(file_path)), exist_ok=True)
