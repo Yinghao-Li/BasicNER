@@ -134,3 +134,4 @@ wandb/
 output/
 *.pt
 *.sh
+*.zip

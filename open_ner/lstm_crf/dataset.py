@@ -219,8 +219,11 @@ class Dataset(BaseDataset):
             if attr not in self.__dict__:
                 logger.warning(f"Attribute {attr} is not natively defined in dataset!")
 
-            if attr == '_embs':
-                value = [torch.from_numpy(emb).to(torch.float) for emb in value]
+            try:
+                if attr == '_embs':
+                    value = [torch.from_numpy(emb).to(torch.float) for emb in value]
+            except TypeError:
+                pass
 
             setattr(self, attr, value)
 
