@@ -90,7 +90,7 @@ def process(args: Arguments):
         if partition == 'train':
             n_sents = idx
 
-            for n_samples in (5, 10, 20, 50, 100):
+            for n_samples in (5, 10, 20, 50, 100, 200, 500, 1000):
                 sample_dict[n_samples] = {i: sorted(random.sample(range(n_sents), n_samples)) for i in range(10)}
 
     save_json(
